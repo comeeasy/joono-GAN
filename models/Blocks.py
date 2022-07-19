@@ -89,7 +89,7 @@ class ResBlock(nn.Module):
 
         self.layer = nn.Sequential(
             nn.Conv2d(self.in_channels, self.btn_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(self.out_channels // 2),
+            nn.BatchNorm2d(self.btn_channels),
             nn.ELU(inplace=True),
             nn.Conv2d(self.btn_channels, self.out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(self.out_channels)
@@ -106,7 +106,7 @@ class ResBlock(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Conv2d):
-            nn.init.xavier_normal_(module.weight.data, 0.0, 0.02)
+            nn.init.xavier_normal_(module.weight.data, 0.0)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.BatchNorm2d):
@@ -128,7 +128,7 @@ class ResBlock(nn.Module):
         return out
 
 class ResTransposeBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, upsample=False):
+    def __init__(self, in_channels, out_channels, ksize=None, stride=None, upsample=False):
         super().__init__()
 
         self.in_channels = in_channels
@@ -138,6 +138,12 @@ class ResTransposeBlock(nn.Module):
         self.stride = 2 if upsample else 1
         self.ksize = 4 if upsample else 3
         self.pad = 1
+
+        if ksize:
+            self.ksize = ksize
+            self.pad = 0
+        if stride:
+            self.stride = stride
 
         self.layer = nn.Sequential(
             nn.Conv2d(self.in_channels, self.btn_channels, kernel_size=3, padding=1, bias=False),
@@ -158,7 +164,7 @@ class ResTransposeBlock(nn.Module):
             if module.bias is not None:
                 module.bias.data.zero_()
         if isinstance(module, nn.ConvTranspose2d):
-            nn.init.xavier_normal_(module.weight.data, 0.0, 0.02)
+            nn.init.xavier_normal_(module.weight.data, 0.0)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.BatchNorm2d):
@@ -168,7 +174,7 @@ class ResTransposeBlock(nn.Module):
     def forward(self, x):
         out = self.layer(x)
 
-        if self.out_channels != self.out_channels:
+        if self.in_channels != self.out_channels or self.upsample:
             x = self.btn_layer(x)
 
         out = x + out

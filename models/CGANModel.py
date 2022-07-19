@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 
-from Blocks import ConvBlock, TransposeConvBlock
+import sys
+
+sys.path.append("/home/joono/MinLab/models")
+from Blocks import ConvBlock, ResBlock, ResTransposeBlock, TransposeConvBlock
 
 
 class MNISTDiscriminator(nn.Module):
@@ -52,25 +55,106 @@ class MNISTDiscriminator(nn.Module):
         return z, c
 
 
-class MNISTGenerator(nn.Module):
+class Generator(nn.Module):
     def __init__(self, n_classes, z_dim, hidden_dim):
         super().__init__()
         self.input_layer = nn.Sequential(
             # B x 100 x 1 x 1 -> B x 100 x 7 x 7 
-            TransposeConvBlock(z_dim + n_classes, z_dim + n_classes, ksize=7, stride=1),
+            ResTransposeBlock(z_dim + n_classes, z_dim + n_classes, ksize=7, stride=1),
             # B x 100 x 7 x 7 -> B x 512 x 7 x 7
-            TransposeConvBlock(z_dim + n_classes, 8 * hidden_dim, upsample=False),
+            ResTransposeBlock(z_dim + n_classes, 8 * hidden_dim, upsample=False),
         )
         self.hidden_layers = nn.Sequential(
             # B x 512 x 7 x 7 -> B x 256 x 14 x 14
-            TransposeConvBlock(8 * hidden_dim, 4 * hidden_dim, upsample=True),
+            ResTransposeBlock(8 * hidden_dim, 4 * hidden_dim, upsample=True),
             # B x 256 x 14 x 14 -> B x 128 x 14 x 14
-            TransposeConvBlock(4 * hidden_dim, 2 * hidden_dim, upsample=False),
+            ResTransposeBlock(4 * hidden_dim, 2 * hidden_dim, upsample=False),
             # B x 128 x 14 x 14 -> B x 64 x 28 x 28
-            TransposeConvBlock(2 * hidden_dim, 1 * hidden_dim, upsample=True),
+            ResTransposeBlock(2 * hidden_dim, 1 * hidden_dim, upsample=True),
         )
         self.output_layer = nn.Sequential(
             nn.Conv2d(hidden_dim, 1, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x, c):
+        out = torch.cat((x, c), dim=1)
+
+        out = self.input_layer(out)
+        out = self.hidden_layers(out)
+        out = self.output_layer(out)
+
+        return out
+
+class CIFAR10Discriminator(nn.Module):
+    def __init__(self, n_classes):
+        super().__init__()
+        # B x 3 x 28 x 28 -> B x 64 x 28 x 28, 3 is for RGB image
+        self.input_layer = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm2d(32),
+            nn.ELU(inplace=True)
+        )
+        self.hidden_layers = nn.Sequential(
+            ResBlock(in_channels=32, out_channels=64),
+            ResBlock(in_channels=64, out_channels=128, downsample=True),
+            ResBlock(in_channels=128, out_channels=256),
+            ResBlock(in_channels=256, out_channels=256),
+            ResBlock(in_channels=256, out_channels=512),
+            ResBlock(in_channels=512, out_channels=512, downsample=True),
+            ResBlock(in_channels=512, out_channels=1024),
+            ResBlock(in_channels=1024, out_channels=1024, downsample=True),
+        )
+        self.output_layer = nn.Sequential(
+            ResBlock(in_channels=1024, out_channels=n_classes),
+        )
+        self.z_layer = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(n_classes, 1),
+            nn.Sigmoid()
+        )
+
+        self.c_layer = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(n_classes, n_classes, bias=True)
+        )
+        
+
+    def forward(self, x):
+        out = self.input_layer(x)
+        out = self.hidden_layers(out)
+        out = self.output_layer(out)
+
+        z = self.z_layer(out)
+        c = self.c_layer(out)
+
+        return z, c
+
+
+class CIFAR10Generator(nn.Module):
+    def __init__(self, n_classes, z_dim):
+        super().__init__()
+        self.input_layer = nn.Sequential(
+            ResTransposeBlock(z_dim + n_classes, 1024, ksize=7, stride=1),
+            ResTransposeBlock(1024, 1024, upsample=False),
+        )
+        self.hidden_layers = nn.Sequential(
+            ResTransposeBlock(1024, 512, upsample=True),
+            ResBlock(512, 512),
+            ResBlock(512, 512),
+            ResBlock(512, 128),
+            ResBlock(128, 128),
+            ResTransposeBlock(128, 128, upsample=True),
+            ResBlock(128, 128),
+            ResBlock(128, 64),
+            ResBlock(64, 64),
+            ResBlock(64, 32),
+        )
+        self.output_layer = nn.Sequential(
+            nn.Conv2d(32, 3, kernel_size=1), # 3 is for RGB image 
+            nn.BatchNorm2d(3),
             nn.Tanh()
         )
 
