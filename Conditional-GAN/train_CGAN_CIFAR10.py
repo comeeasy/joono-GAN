@@ -65,8 +65,8 @@ if __name__ == "__main__":
 
     device = torch.device("cuda")
 
-    G = CIFAR10Generator(n_classes, z_dim, hidden_dim=128).to(device)
-    D = CIFAR10Discriminator(n_classes, z_dim, hidden_c=128).to(device)
+    G = CIFAR10Generator(n_classes, z_dim).to(device)
+    D = CIFAR10Discriminator(n_classes).to(device)
 
     bce_criterion = nn.BCELoss().to(device)
     ce_criterion = nn.CrossEntropyLoss().to(device)
@@ -79,6 +79,7 @@ if __name__ == "__main__":
 
     total_batch = len(data_loader)
     img_list = []
+    sum_wirter_iter = 1
 
     writer = SummaryWriter("runs/cgan_cifar10")
     images, labels = next(iter(data_loader))
@@ -95,7 +96,7 @@ if __name__ == "__main__":
         avgLoss_G_S = 0
         avgLoss_G_C = 0
 
-        for X, Y in data_loader:
+        for i, (X, Y) in tqdm(enumerate(data_loader)):
             X = X.to(device)
             Y = Y.to(device)
 
@@ -135,7 +136,7 @@ if __name__ == "__main__":
                 z_fake2, c_fake2 = D(fake)
                 lossG_S = bce_criterion(1 - z_fake2, real_label_G.detach())
                 lossG_C = ce_criterion(c_fake2, Y.float())
-                lossG = lossG_S + 2 * lossG_C
+                lossG = lossG_S + lossG_C
 
                 G.zero_grad()
                 lossG.backward()
@@ -148,19 +149,26 @@ if __name__ == "__main__":
             avgLoss_G_S += lossG_S.mean().item() / total_batch
             avgLoss_G_C += lossG_C.mean().item() / total_batch
 
-        writer.add_scalar('Loss/avgLoss_D_S_real', avgLoss_D_S_real, epoch+1)
-        writer.add_scalar('Loss/avgLoss_D_S_fake', avgLoss_D_S_fake, epoch+1)
-        writer.add_scalar('Loss/avgLoss_D_C_real', avgLoss_D_C_real, epoch+1)
-        writer.add_scalar('Loss/avgLoss_D_C_fake', avgLoss_D_C_fake, epoch+1)
-        writer.add_scalar('Loss/avgLoss_G_S', avgLoss_G_S, epoch+1)
-        writer.add_scalar('Loss/avgLoss_G_C', avgLoss_G_C, epoch+1)
+            if (i + 1) % 100 == 0:
+                writer.add_scalar('Loss/Loss_D_S_real', lossS_real.mean().item() , sum_wirter_iter)
+                writer.add_scalar('Loss/Loss_D_S_fake', lossS_fake.mean().item(), sum_wirter_iter)
+                writer.add_scalar('Loss/Loss_D_C_real', lossC_real.mean().item(), sum_wirter_iter)
+                writer.add_scalar('Loss/Loss_D_C_fake', lossC_fake.mean().item(), sum_wirter_iter)
+                writer.add_scalar('Loss/Loss_G_S', lossG_S.mean().item(), sum_wirter_iter)
+                writer.add_scalar('Loss/Loss_G_C', lossG_C.mean().item(), sum_wirter_iter)
 
-        writer.add_image("generated image", generate_example(G), epoch+1)
-        print(f"epoch: {epoch+1:3d} avgLoss_D_S_real: {lossS_real:.4f} avgLoss_D_S_fake: {lossS_fake:.4f} avgLoss_D_C_real: {lossC_real:.4f} avgLoss_D_C_fake: {lossC_fake:.4f} avgLoss_G_S: {lossG_S:.4f} avgLoss_G_C: {lossG_C:.4f}")
-        # img_list.append(fake)
-        generate_example(G)
+                writer.add_image("generated image", generate_example(G), sum_wirter_iter)
+                print(f"epoch: {epoch+1:3d} avgLoss_D_S_real: {lossS_real:.4f} avgLoss_D_S_fake: {lossS_fake:.4f} avgLoss_D_C_real: {lossC_real:.4f} avgLoss_D_C_fake: {lossC_fake:.4f} avgLoss_G_S: {lossG_S:.4f} avgLoss_G_C: {lossG_C:.4f}")
+                sum_wirter_iter += 1
 
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % 1 == 0:
+            writer.add_scalar('Loss/avgLoss_D_S_real', avgLoss_D_S_real, epoch+1)
+            writer.add_scalar('Loss/avgLoss_D_S_fake', avgLoss_D_S_fake, epoch+1)
+            writer.add_scalar('Loss/avgLoss_D_C_real', avgLoss_D_C_real, epoch+1)
+            writer.add_scalar('Loss/avgLoss_D_C_fake', avgLoss_D_C_fake, epoch+1)
+            writer.add_scalar('Loss/avgLoss_G_S', avgLoss_G_S, epoch+1)
+            writer.add_scalar('Loss/avgLoss_G_C', avgLoss_G_C, epoch+1)
+
             torch.save(G.state_dict(), f"weights/CGAN_CIFAR10_G_{epoch+1:03d}.pt")
             torch.save(D.state_dict(), f"weights/CGAN_CIFAR10_D_{epoch+1:03d}.pt")
 
